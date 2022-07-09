@@ -1,18 +1,21 @@
 
 use <snap-pins.scad>;
 
-PART = "test"; // ["cage", "rail", "fan_shroud", "fan_mounting_pin", "test"]
+SBC = "rockpro64";
+PART = "tower-test"; // ["tower", "tower_face", "cage", "rail", "fan_shroud", "fan_mounting_pin", "sbc_mount", "test"]
 // Select the grill style for the fan shroud.  Use custom and replace the fan_cover_custom.stl with your custom grill (see README.md for more details.)  Select none for an empty hole with an externally mounted grill cover.
-grill_style = "fan_cover_web.stl"; // [fan_cover_crosshair.stl:crosshair,fan_cover_crosshex.stl:crosshex,fan_cover_grid.stl:grid,fan_cover_teardrop.stl:teardrop,fan_cover_web.stl:web,fan_cover_custom.stl:custom,fan_cover_none.stl:none]
+grill_style = "fan_cover_crosshex.stl"; // [fan_cover_crosshair.stl:crosshair,fan_cover_crosshex.stl:crosshex,fan_cover_grid.stl:grid,fan_cover_teardrop.stl:teardrop,fan_cover_web.stl:web,fan_cover_custom.stl:custom,fan_cover_none.stl:none]
 
 include_fan_mount = true;
 
 fan_grill_cover_height = 2;
-shroud_h = 26;
+shroud_w = 120;
+shroud_l = 120;
+shroud_h = 29;
 shroud_inset = 11;
 
 // How much tolerance to add to the prints.  This primarily impacts the rail channels, but also has some other impacts such as the pins on the rail that plug into the hard drive.
-tolerance = .2;
+tolerance = 0.2;
 
 bay_h = 41.3 + tolerance;
 bay_w = 146.1 + tolerance;
@@ -58,7 +61,12 @@ hdd_l = hdd_a2 + tolerance;
 cage_h = 125.75 + 0;
 cage_w = 145 + 0; // 146;
 cage_l = hdd_a2 - hdd_a7 + 20; //cd_a10 + cd_a11 + 10;
+
 total_rail_height = 8 + 0;
+
+pin_d = 2.7 - tolerance; //.1140 * 25.4;
+main_rail_offset = hdd_a2 - hdd_a8 - hdd_a9 - pin_d/2;
+main_rail_length = 4 * 25.4;
 
 echo("old", cd_a10 + cd_a11 + 10);
 echo("new", hdd_a2 - hdd_a7 + 20);
@@ -82,6 +90,49 @@ snap_pin_snapDepth = 1.2;
 snap_pin_thickness = 1.0;
 
 $fn=$preview ? 18 : 120;
+
+standoff_h = 6;
+standoff_d = 9;
+standoff_hole_d = 5.45 - tolerance;
+
+// SBC cavity settings
+sbc_none      = [[0, 0, 0], [], [ 85 ]];
+sbc_rockpro64 = [
+    [80, 128, 20],   // x, y (side w/ no ports), z (clearance),
+    [ // stand-off locations
+        [4.5,       4.5], 
+        [80 - 4.5,  4.5],
+        [4.5,       128  - 4.5],
+        [80 - 4.5,  128  - 4.5]
+    ],
+    [
+      63 // minimum cavity height
+    ]
+];
+sbc =
+    SBC=="rockpro64" ? sbc_rockpro64 :
+    sbc_none
+    ;
+sbc_plate_h = 2;
+sbc_cavity_h = tolerance + sbc_plate_h + standoff_h + sbc[2][0] + tolerance;
+
+echo("sbc cavity height", sbc_cavity_h);
+
+tower_h = max(cage_h, sbc[0][0] + (spacing_w + tolerance) * 2);
+tower_w = cage_w + sbc_cavity_h + spacing_w;
+tower_l = cage_l;
+
+lip_height       = 12;
+lip_thickness    = 1.2;
+lip_screw_hole_d = 3;
+lip_screw_hole_z = 5;
+lip_screw_hole_inset = 20;
+lip_screws = [
+    [ cage_w/2 - 31,  tower_h/2],
+    [ cage_w/2 - 31, -tower_h/2],
+    [-cage_w/2 + 45.5,  tower_h/2],
+    [-cage_w/2 + 45.5, -tower_h/2]
+];
 
 module vertical_hdd(l = hdd_l) {
     translate([hdd_h, 0, 0]) {
@@ -123,11 +174,11 @@ module rail_spacing() {
             cube([rail, cage_l*2, rail], center=true);
 }
 
-module fan_mounting_sockets() {
-    center_w = cage_w/2;
-    center_h = cage_h/2;
-    corner_w = cage_w/2 - 4;
-    corner_h = cage_h/2 - 8;
+module fan_mounting_sockets(w = cage_w, h = cage_h) {
+    center_w = w/2;
+    center_h = h/2;
+    corner_w = w/2 - 4;
+    corner_h = h/2 - 8;
     snap_pin_radius = snap_pin_diameter / 2;
     cylinder_r = snap_pin_radius + snap_pin_snap + snap_pin_cylinder_thickness;
     cylnder_h = snap_pin_length + snap_pin_cylinder_thickness;
@@ -148,6 +199,136 @@ module fan_mounting_sockets() {
                                 printable = false,
                                 cylinderRadius = cylinder_r,
                                 cylinderHeight = cylnder_h);
+        }
+    }
+}
+
+module sbc_mount() {
+    bridge_w = hdd_w + total_rail_height * 2;
+    bridge_l = spacing_w * 7;
+    
+    plate_w = sbc[0][0];
+    plate_l = sbc[0][1];
+    plate_h = sbc_plate_h;
+
+    
+    // Bridge plate
+    for (bridge_y = [main_rail_offset + main_rail_length - (bridge_l + spacing_w *2),
+                     spacing_w * 6.75]) {       
+        translate([0, bridge_y, 0]) {
+            cube([bridge_w, bridge_l, plate_h]);
+        }
+    }
+        
+    // SBC plate
+    translate([(bridge_w - plate_w) / 2, 0, 0]) {
+        cube([plate_w, plate_l, plate_h]);
+        
+        // SBC stand-offs go here
+        for (standoff = sbc[1]) {
+            translate([standoff[0], standoff[1], (standoff_h + plate_h) / 2]) {
+                difference() {
+                    cylinder(h = standoff_h + plate_h, d = standoff_d, center = true);
+                    
+                    translate([0, 0, plate_h])
+                        cylinder(h = standoff_h + plate_h, d = standoff_hole_d, center = true);
+                }
+            }
+        }
+    }
+    
+    // Rails to connect to tower
+    translate([0, 0, total_rail_height*3/4 + 0.15])
+        rotate([0, 90, 0])
+            rail(with_pin = false);
+    translate([bridge_w, 0, total_rail_height*3/4 + 0.15])
+        rotate([0, -90, 0])
+            rail(with_pin = false);
+}
+
+module tower() {
+    cut = 7;
+    cage_x = tower_w - cage_w;
+    cage_z = (tower_h - cage_h) / 2;
+
+    difference() {
+        cube([tower_w, tower_l, tower_h]);
+        
+        // cut off harsh corners
+        translate([0, cut, 0])
+            rotate([0, 45, 0])
+                cube([cut, tower_l*2, cut], center=true);
+        translate([tower_w, cut, 0])
+            rotate([0, 45, 0])
+                cube([cut, tower_l*2, cut], center=true);
+        translate([0, cut, tower_h])
+            rotate([0, 45, 0])
+                cube([cut, tower_l*2, cut], center=true);
+        translate([tower_w, cut, tower_h])
+            rotate([0, 45, 0])
+                cube([cut, tower_w*2, cut], center=true);
+        
+        ///////////////////////
+        // SECTION: SBC mount
+        ///////////////////////
+
+        // cut out center cavity 
+        translate([cage_x/2 + spacing_w/2, tower_l/2, tower_h/2])
+            cube([cage_x - spacing_w, tower_l * 2, hdd_w], center=true);
+        
+        // cut out sbc mount area
+        translate([cage_x, -1, (cage_h - hdd_w) / 2]) {
+            translate([-hdd_h, 0, 0])
+                vertical_hdd(hdd_l + 2);
+            
+            translate([-spacing_w, 0, -spacing_w])
+                cube([spacing_w, main_rail_offset + main_rail_length, hdd_w + spacing_w * 2]);
+        }
+        
+        ///////////////////////
+        // SECTION: Drive cage
+        ///////////////////////
+        translate([cage_x, 0, cage_z]) {
+
+            // cut outs relative to the center of the cage
+            translate([cage_w/2, cage_l/2, cage_h/2]) {
+                // center cavity
+                cube([hdd_h * 4 + spacing_w*7, cage_l * 2, hdd_w], center=true);
+                
+                // lip around the sides.
+                for (lip = [1, -1]) {
+                    h = lip_height + tolerance/2;
+                    t = lip_thickness + tolerance/2;
+                    translate([0, (h - tower_l) / 2, lip * (tower_h - t) / 2])
+                        cube([cage_w + tolerance * 2, h + 0.001, t + 0.004], center=true);
+                }
+            
+                // holes for heat-set inserts
+                rotate([90, 0, 0])
+                    for (screw = lip_screws)
+                        translate([screw[0], screw[1], tower_h / 2 - lip_screw_hole_z - tolerance])
+                            rotate([90, 0, 0])
+                                cylinder(h = (standoff_h + 0.5) * 2, d = standoff_hole_d, center = true);
+            }
+            
+            // cut out the hdd vertical spacing
+            translate([spacing_w, 0, 0])
+                caged_hdds();
+            
+            // cut out routing for fan power cable.
+            center_w = cage_w/2;
+            center_h = cage_h/2;
+            corner_w = (cage_w - spacing_w*4)/2 - 1;
+            corner_h = hdd_w/2 - 1;
+            for(w = [-1 : 2 : -1]) {
+                x = center_w + corner_w * w;
+                for(h = [-1 : 2 : 1]) {
+                    z = center_h + corner_h * h;
+                    translate([x, cage_l/2, z])
+                        rotate([90, 0, 0])
+                            cylinder(cage_l + 2, r=3, center=true);
+                }
+            }
         }
     }
 }
@@ -301,9 +482,8 @@ module handle(length, width, height, rail_height, positive=true) {
     }
 }
 
-module rail(positive=true) {
+module rail(positive=true, with_pin=true) {
     pin_len = 6;
-    pin_d = 2.7 - tolerance; //.1140 * 25.4;
     t = (positive) ? 0 : tolerance * 2;
     top_width = (pin_d > 3) ? pin_d + t: 3 + t;
     top_height=total_rail_height / 3 + t;
@@ -313,10 +493,7 @@ module rail(positive=true) {
     top_y = (top_height + bottom_height)/2;
     mid_y = top_y - top_height;
     bottom_y = -top_y;
-    
-    main_length = 4 * 25.4;
-    main_rail_offset = hdd_a2 - hdd_a8 - hdd_a9 - pin_d/2;
-
+        
     //  A_|_B
     //C /   \D
     //E|_____|F
@@ -333,17 +510,17 @@ module rail(positive=true) {
     echo("main_rail_offset = ", main_rail_offset);
     translate([0, main_rail_offset, -bottom_y]) {
         rotate([90, 0, 180]) 
-            linear_extrude(main_length + pin_d)
+            linear_extrude(main_rail_length + pin_d)
                 polygon(points, faces);
     }
-    if (positive) {
+    if (positive && with_pin) {
         translate([0, main_rail_offset, total_height + pin_len/2-0.01]) {
-        translate([0, pin_d/2, 0])
-            rotate([0, -90, 0])
-                pin(pin_d, pin_len);
-        translate([0, main_length + pin_d/2, 0])
-            rotate([0, -90, 0])
-                pin(pin_d, pin_len);
+            translate([0, pin_d/2, 0])
+                rotate([0, -90, 0])
+                    pin(pin_d, pin_len);
+            translate([0, main_rail_length + pin_d/2, 0])
+                rotate([0, -90, 0])
+                    pin(pin_d, pin_len);
         }
     }
     handle(main_rail_offset, bottom_width, 1.5, total_height, positive);
@@ -357,9 +534,9 @@ module fan_shroud() {
     translate([0, 0, shroud_h/2]) {
         difference() {
             cube([cage_w, cage_h, shroud_h], center=true);
-            cube([119.99, 119.99, shroud_h + 10], center=true);
-            translate([0, 0, fan_grill_cover_height + 2])
-                cube([cage_w - outer_wall, 120, shroud_h], center=true);
+            cube([shroud_w - 0.001, shroud_l - 0.001, shroud_h + 10], center=true);
+            translate([0, 0, fan_grill_cover_height - tolerance + 0.001])
+                cube([cage_w - outer_wall, shroud_l + tolerance * 2, shroud_h], center=true);
             translate([-cage_w/2, -cage_h/2, shroud_h/2])
                 rotate([-90, 0, 0])
                     fan_mounting_sockets();
@@ -461,16 +638,63 @@ module fan_shroud_grip() {
 
 }
 
+module tower_face() {
+    shroud_t = 4;
+    
+    height = shroud_h + lip_height;
+    
+    outer_wall = tower_h - 110;
+
+    import(grill_style);
+    translate([0, 0, height/2]) {
+        difference() {
+            cube([cage_w, tower_h, height], center=true);
+            
+            // lip around the sides.
+            translate([0, 0, shroud_h / 2])
+                cube([cage_w + 1, tower_h - lip_thickness * 2, lip_height + tolerance + 0.001], center=true);
+            
+            // holes for screws
+            for (screw = lip_screws)
+                translate([screw[0], screw[1], height/2 - lip_height + lip_screw_hole_z])
+                    rotate([90, 0, 0])
+                        cylinder(h = lip_thickness * 4, d = lip_screw_hole_d, center = true);
+            
+            // cavity for fan
+            cube([shroud_w - 0.001, shroud_l - 0.001, height + 10], center=true);
+            translate([0, 0, fan_grill_cover_height - tolerance + 0.001])
+                cube([cage_w - outer_wall, shroud_l, height], center=true);
+
+            // cut off harsh corners
+            cut=7;
+            translate([cage_w/2, tower_h/2, 0])
+                rotate([0, 0, 45])
+                    cube([cut, cut, height + 1], center=true);
+            translate([cage_w/2, -tower_h/2, 0])
+                rotate([0, 0, 45])
+                    cube([cut, cut, height + 1], center=true);
+        }
+    }
+}
+
 if (PART == "cage") {
     translate([0, 0, cage_l])
         rotate([-90, 0, 0])
             cage();
+} else if (PART == "tower") {
+    translate([0, 0, tower_l])
+        rotate([-90, 0, 0])
+            tower();
 } else if (PART == "rail") {
     translate([0, 0, total_rail_height*3/4])
         rotate([0, 90, 0])
             rail();
+} else if (PART == "sbc_mount") {
+    sbc_mount();
 } else if (PART == "fan_shroud") {
     fan_shroud();
+} else if (PART == "tower_face") {
+    tower_face();
 } else if (PART == "fan_mounting_pin") {
     fan_mounting_pin();
 } else if (PART == "test") {
@@ -518,22 +742,30 @@ if (PART == "cage") {
         fan_mounting_pin();
     }
 } else {
+    translate([20, 0, tower_w + 20]) rotate([0, 90, 0]) {
+            
+        translate([20, 0, 0])
+            tower();
+
+        translate([cage_w/2 + tower_w - cage_w + 20, -shroud_h, cage_h/2])
+            rotate([-90, 0, 0])
+                tower_face();
+        
+        translate([tower_w - cage_w + 20, -20, 4 + tolerance])
+            rotate([0, -90, 0])
+                sbc_mount();
+    }
+    
     translate([0, 0, 30])
         handle(15.525, 15, 1.5, total_rail_height, true);
     translate([-20, 0, 30])
         translate([-total_rail_height, 0, 0])
             handle(15.525, 15, 1.5, total_rail_height, false);
 
-    translate([cage_w/2 + 20, -4*2 - 20, cage_h/2])
-        rotate([-90, 0, 0])
-            fan_shroud();
-    translate([20, 0, 0])
-        cage();
     translate([0, 0, total_rail_height*3/4])
         rotate([0, 90, 0])
             rail();
     translate([-20, 0, hdd_a5 + (.1380 * 25.4)/2])
         rotate([0, 90, 0])
             rail(false);
-
 }
